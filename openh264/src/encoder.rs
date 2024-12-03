@@ -4,9 +4,7 @@ use crate::error::NativeErrorExt;
 use crate::formats::YUVSource;
 use crate::{Error, OpenH264API, Timestamp};
 use openh264_sys2::{
-    videoFormatI420, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo,
-    SSourcePicture, API, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT,
-    ENCODER_OPTION_TRACE_LEVEL, RC_MODES, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET,
+    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_FIXEDSLCNUM_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
 };
 use std::os::raw::{c_int, c_uchar, c_void};
 use std::ptr::{addr_of_mut, null, null_mut};
@@ -164,6 +162,45 @@ impl Default for SpsPpsStrategy {
     }
 }
 
+/// Sets the H.264 encoding profile
+#[derive(Copy, Clone, Debug)]
+#[repr(i32)]
+pub enum Profile {
+    Baseline = PRO_BASELINE,
+    Main = PRO_MAIN,
+    Extended = PRO_EXTENDED,
+    High = PRO_HIGH,
+    High10 = PRO_HIGH10,
+    High422 = PRO_HIGH422,
+    High444 = PRO_HIGH444,
+    CAVLC444 = PRO_CAVLC444,
+    ScalableBaseline = PRO_SCALABLE_BASELINE,
+    ScalableHigh = PRO_SCALABLE_HIGH,
+}
+
+/// Sets the H.264 encoding level
+#[derive(Copy, Clone, Debug)]
+#[repr(i32)]
+pub enum Level {
+    Level10 = LEVEL_1_0,
+    Level1B = LEVEL_1_B,
+    Level11 = LEVEL_1_1,
+    Level12 = LEVEL_1_2,
+    Level13 = LEVEL_1_3,
+    Level20 = LEVEL_2_0,
+    Level21 = LEVEL_2_1,
+    Level22 = LEVEL_2_2,
+    Level30 = LEVEL_3_0,
+    Level31 = LEVEL_3_1,
+    Level32 = LEVEL_3_2,
+    Level40 = LEVEL_4_0,
+    Level41 = LEVEL_4_1,
+    Level42 = LEVEL_4_2,
+    Level50 = LEVEL_5_0,
+    Level51 = LEVEL_5_1,
+    Level52 = LEVEL_5_2,
+}
+
 /// Configuration for the [`Encoder`].
 ///
 /// Setting missing? Please file a PR!
@@ -179,6 +216,9 @@ pub struct EncoderConfig {
     rate_control_mode: RateControlMode,
     sps_pps_strategy: SpsPpsStrategy,
     multiple_thread_idc: u16,
+    max_slice_len: Option<u32>,
+    profile: Option<Profile>,
+    level: Option<Level>,
 }
 
 impl EncoderConfig {
@@ -194,6 +234,9 @@ impl EncoderConfig {
             rate_control_mode: Default::default(),
             sps_pps_strategy: Default::default(),
             multiple_thread_idc: 0,
+            max_slice_len: None,
+            profile: None,
+            level: None,
         }
     }
 
@@ -230,6 +273,24 @@ impl EncoderConfig {
     /// Set the SPS/PPS behavior.
     pub fn sps_pps_strategy(mut self, value: SpsPpsStrategy) -> Self {
         self.sps_pps_strategy = value;
+        self
+    }
+
+    /// Set the maximum slice length
+    pub fn max_slice_len(mut self, max_slice_len: u32) -> Self {
+        self.max_slice_len = Some(max_slice_len);
+        self
+    }
+
+    /// Set the encoding profile
+    pub fn profile(mut self, profile: Profile) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    /// Set the encoding profile level
+    pub fn level(mut self, level: Level) -> Self {
+        self.level = Some(level);
         self
     }
 
@@ -377,6 +438,29 @@ impl Encoder {
         params.fMaxFrameRate = self.config.max_frame_rate;
         params.eSpsPpsIdStrategy = self.config.sps_pps_strategy.to_c();
         params.iMultipleThreadIdc = self.config.multiple_thread_idc;
+
+        if let Some(max_slice_len) = self.config.max_slice_len {
+            params.uiMaxNalSize = max_slice_len;
+
+            for spatial_layer in &mut params.sSpatialLayers {
+                spatial_layer.sSliceArgument.uiSliceMode = SM_FIXEDSLCNUM_SLICE;
+                spatial_layer.sSliceArgument.uiSliceSizeConstraint = max_slice_len;
+            }
+        }
+
+        for spatial_layer in &mut params.sSpatialLayers {
+            if let Some(profile) = self.config.profile {
+                spatial_layer.uiProfileIdc = profile as EProfileIdc;
+            }
+
+            if let Some(level) = self.config.level {
+                spatial_layer.uiLevelIdc = level as ELevelIdc;
+            }
+
+            spatial_layer.iMaxSpatialBitrate = self.config.target_bitrate as _;
+            spatial_layer.iSpatialBitrate = self.config.target_bitrate as _;
+            spatial_layer.fFrameRate = self.config.max_frame_rate;
+        }
 
         unsafe {
             if self.previous_dimensions.is_none() {
