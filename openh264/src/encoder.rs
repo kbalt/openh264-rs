@@ -456,6 +456,9 @@ impl Encoder {
             if let Some(level) = self.config.level {
                 spatial_layer.uiLevelIdc = level as ELevelIdc;
             }
+
+            spatial_layer.iMaxSpatialBitrate = self.config.target_bitrate as _;
+            spatial_layer.iSpatialBitrate = self.config.target_bitrate as _;
         }
 
         unsafe {
