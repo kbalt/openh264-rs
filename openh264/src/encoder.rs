@@ -4,7 +4,13 @@ use crate::error::NativeErrorExt;
 use crate::formats::YUVSource;
 use crate::{Error, OpenH264API, Timestamp};
 use openh264_sys2::{
-    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_SIZELIMITED_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
+    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt,
+    SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT,
+    ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B,
+    LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1,
+    LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN,
+    PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_SIZELIMITED_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL,
+    WELS_LOG_QUIET,
 };
 use std::os::raw::{c_int, c_uchar, c_void};
 use std::ptr::{addr_of_mut, null, null_mut};
@@ -208,7 +214,8 @@ pub enum Level {
 #[must_use]
 pub struct EncoderConfig {
     enable_skip_frame: bool,
-    target_bitrate: u32,
+    target_bitrate: Option<u32>,
+    max_bitrate: Option<u32>,
     enable_denoise: bool,
     debug: i32,
     data_format: EVideoFormatType,
@@ -226,7 +233,8 @@ impl EncoderConfig {
     pub fn new() -> Self {
         Self {
             enable_skip_frame: true,
-            target_bitrate: 120_000,
+            target_bitrate: None,
+            max_bitrate: None,
             enable_denoise: false,
             debug: 0,
             data_format: videoFormatI420,
@@ -242,7 +250,13 @@ impl EncoderConfig {
 
     /// Sets the requested bit rate in bits per second.
     pub fn set_bitrate_bps(mut self, bps: u32) -> Self {
-        self.target_bitrate = bps;
+        self.target_bitrate = Some(bps);
+        self
+    }
+
+    /// Sets the requested bit rate in bits per second.
+    pub fn set_max_bitrate_bps(mut self, bps: u32) -> Self {
+        self.max_bitrate = Some(bps);
         self
     }
 
@@ -433,7 +447,12 @@ impl Encoder {
         params.iPicHeight = height as c_int; // If we do .into() instead, could this fail to compile on some platforms?
         params.iRCMode = self.config.rate_control_mode.to_c();
         params.bEnableFrameSkip = self.config.enable_skip_frame;
-        params.iTargetBitrate = self.config.target_bitrate.try_into()?;
+        if let Some(target_bitrate) = self.config.target_bitrate {
+            params.iTargetBitrate = target_bitrate.try_into()?;
+        }
+        if let Some(max_bitrate) = self.config.max_bitrate {
+            params.iMaxBitrate = max_bitrate.try_into()?;
+        }
         params.bEnableDenoise = self.config.enable_denoise;
         params.fMaxFrameRate = self.config.max_frame_rate;
         params.eSpsPpsIdStrategy = self.config.sps_pps_strategy.to_c();
@@ -447,14 +466,19 @@ impl Encoder {
         }
 
         for spatial_layer in &mut params.sSpatialLayers {
-            spatial_layer.uiProfileIdc = PRO_BASELINE;
-
             if let Some(profile) = self.config.profile {
                 spatial_layer.uiProfileIdc = profile as EProfileIdc;
             }
 
             if let Some(level) = self.config.level {
                 spatial_layer.uiLevelIdc = level as ELevelIdc;
+            }
+            
+            if let Some(target_bitrate) = self.config.target_bitrate {
+                spatial_layer.iSpatialBitrate = target_bitrate.try_into()?;
+            }
+            if let Some(max_bitrate) = self.config.max_bitrate {
+                spatial_layer.iMaxSpatialBitrate = max_bitrate.try_into()?;
             }
         }
 
