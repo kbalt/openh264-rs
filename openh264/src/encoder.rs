@@ -4,7 +4,7 @@ use crate::error::NativeErrorExt;
 use crate::formats::YUVSource;
 use crate::{Error, OpenH264API, Timestamp};
 use openh264_sys2::{
-    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, CAMERA_VIDEO_REAL_TIME, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_SIZELIMITED_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
+    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, CAMERA_VIDEO_REAL_TIME, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_FIXEDSLCNUM_SLICE, SM_SIZELIMITED_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
 };
 use std::os::raw::{c_int, c_uchar, c_void};
 use std::ptr::{addr_of_mut, null, null_mut};
@@ -441,9 +441,13 @@ impl Encoder {
 
         params.uiIntraPeriod = 60;
 
+        if let Some(max_len) = self.config.max_slice_len {
+            params.uiMaxNalSize = max_len;
+        }
+
         if let Some(max_slice_len) = self.config.max_slice_len {
             for spatial_layer in &mut params.sSpatialLayers {
-                spatial_layer.sSliceArgument.uiSliceMode = SM_SIZELIMITED_SLICE;
+                spatial_layer.sSliceArgument.uiSliceMode = SM_FIXEDSLCNUM_SLICE;
                 spatial_layer.sSliceArgument.uiSliceSizeConstraint = max_slice_len;
             }
         }
