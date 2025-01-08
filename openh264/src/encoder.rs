@@ -4,7 +4,7 @@ use crate::error::NativeErrorExt;
 use crate::formats::YUVSource;
 use crate::{Error, OpenH264API, Timestamp};
 use openh264_sys2::{
-    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_FIXEDSLCNUM_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
+    videoFormatI420, ELevelIdc, EProfileIdc, EVideoFormatType, ISVCEncoder, ISVCEncoderVtbl, SEncParamBase, SEncParamExt, SFrameBSInfo, SLayerBSInfo, SSourcePicture, API, DEBLOCKING_IDC_0, ENCODER_OPTION, ENCODER_OPTION_DATAFORMAT, ENCODER_OPTION_SVC_ENCODE_PARAM_EXT, ENCODER_OPTION_TRACE_LEVEL, LEVEL_1_0, LEVEL_1_1, LEVEL_1_2, LEVEL_1_3, LEVEL_1_B, LEVEL_2_0, LEVEL_2_1, LEVEL_2_2, LEVEL_3_0, LEVEL_3_1, LEVEL_3_2, LEVEL_4_0, LEVEL_4_1, LEVEL_4_2, LEVEL_5_0, LEVEL_5_1, LEVEL_5_2, MEDIUM_COMPLEXITY, PRO_BASELINE, PRO_CAVLC444, PRO_EXTENDED, PRO_HIGH, PRO_HIGH10, PRO_HIGH422, PRO_HIGH444, PRO_MAIN, PRO_SCALABLE_BASELINE, PRO_SCALABLE_HIGH, RC_MODES, SM_FIXEDSLCNUM_SLICE, SM_SINGLE_SLICE, VIDEO_CODING_LAYER, WELS_LOG_DETAIL, WELS_LOG_QUIET
 };
 use std::os::raw::{c_int, c_uchar, c_void};
 use std::ptr::{addr_of_mut, null, null_mut};
@@ -438,29 +438,44 @@ impl Encoder {
         params.fMaxFrameRate = self.config.max_frame_rate;
         params.eSpsPpsIdStrategy = self.config.sps_pps_strategy.to_c();
         params.iMultipleThreadIdc = self.config.multiple_thread_idc;
+        // params.bPrefixNalAddingCtrl = false;
 
-        if let Some(max_slice_len) = self.config.max_slice_len {
-            params.uiMaxNalSize = max_slice_len;
+        params.bEnableSceneChangeDetect = true;
+        params.bEnableAdaptiveQuant = true;
+        params.bEnableBackgroundDetection = true;
+        params.bEnableLongTermReference = false;
+        params.iComplexityMode = MEDIUM_COMPLEXITY;
+        params.bEnableFrameSkip = false;
+        params.uiIntraPeriod = 90;
+        params.iLoopFilterDisableIdc = DEBLOCKING_IDC_0;
+        params.iMaxQp = 51;
+        params.iMinQp = 0;
+        params.bEnableLongTermReference = false;
 
-            for spatial_layer in &mut params.sSpatialLayers {
-                spatial_layer.sSliceArgument.uiSliceMode = SM_FIXEDSLCNUM_SLICE;
-                spatial_layer.sSliceArgument.uiSliceSizeConstraint = max_slice_len;
-            }
+        if let Some(profile) = self.config.profile {
+            params.sSpatialLayers[0].uiProfileIdc = profile as EProfileIdc;
         }
 
-        for spatial_layer in &mut params.sSpatialLayers {
-            if let Some(profile) = self.config.profile {
-                spatial_layer.uiProfileIdc = profile as EProfileIdc;
-            }
-
-            if let Some(level) = self.config.level {
-                spatial_layer.uiLevelIdc = level as ELevelIdc;
-            }
-
-            spatial_layer.iMaxSpatialBitrate = self.config.target_bitrate as _;
-            spatial_layer.iSpatialBitrate = self.config.target_bitrate as _;
-            spatial_layer.fFrameRate = self.config.max_frame_rate;
+        if let Some(level) = self.config.level {
+            params.sSpatialLayers[0].uiLevelIdc = level as ELevelIdc;
         }
+
+        params.iSpatialLayerNum = 1;
+        params.iTemporalLayerNum = 1;
+        params.iLtrMarkPeriod = 30;
+        params.sSpatialLayers[0].iMaxSpatialBitrate = self.config.target_bitrate as _;
+        params.sSpatialLayers[0].iSpatialBitrate = self.config.target_bitrate as _;
+        params.sSpatialLayers[0].fFrameRate = self.config.max_frame_rate;
+        params.sSpatialLayers[0].iVideoWidth = width;
+        params.sSpatialLayers[0].iVideoHeight = height;
+        params.sSpatialLayers[0].sSliceArgument.uiSliceMode = SM_SINGLE_SLICE;
+        params.sSpatialLayers[0].sSliceArgument.uiSliceNum = 1;
+
+        // if let Some(max_slice_len) = self.config.max_slice_len {
+            // params.uiMaxNalSize = max_slice_len;
+
+                // params.sSpatialLayers[0].sSliceArgument.uiSliceSizeConstraint = max_slice_len;
+        // }
 
         unsafe {
             if self.previous_dimensions.is_none() {
